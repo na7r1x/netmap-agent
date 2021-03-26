@@ -1,8 +1,9 @@
 package aggregatorsrv
 
 import (
-	"encoding/json"
 	"fmt"
+	"sync"
+	"context"
 
 	"github.com/na7r1x/netmap-agent/internal/domain"
 )
@@ -10,16 +11,16 @@ import (
 type service struct {
 	in    chan domain.PacketEnvelope
 	out   chan domain.TrafficGraph
-	stop  chan struct{}
+	ctx  context.Context
 	flush chan bool
 	graph domain.TrafficGraph
 }
 
-func New(in chan domain.PacketEnvelope, out chan domain.TrafficGraph, stop chan struct{}) *service {
+func New(in chan domain.PacketEnvelope, out chan domain.TrafficGraph, ctx context.Context) *service {
 	return &service{
 		in:   in,
 		out:  out,
-		stop: stop,
+		ctx: ctx,
 		graph: domain.TrafficGraph{
 			Vertices: make(map[string]domain.VertexProperties),
 			Edges:    make(map[string]domain.EdgeProperties),
@@ -31,22 +32,20 @@ func New(in chan domain.PacketEnvelope, out chan domain.TrafficGraph, stop chan 
 	}
 }
 
-func (srv *service) Listen() {
+func (srv *service) Listen(wg *sync.WaitGroup) {
+	defer wg.Done()
 	for {
 		var packet domain.PacketEnvelope
 		select {
-		case <-srv.stop:
+		case <-srv.ctx.Done():
+			fmt.Println("[aggregatorsrv]: received termination signal")
 			return
 		case packet = <-srv.in:
 			srv.aggregate(packet)
 		case <-srv.flush:
 			fmt.Println("Flushing graph...")
-			b, err := json.Marshal(&srv.graph)
-			if err != nil {
-				fmt.Println(err)
-			} else {
-				fmt.Println(string(b))
-			}
+			srv.out <- srv.graph
+			srv.emptyGraph()
 		}
 	}
 }
@@ -106,5 +105,15 @@ func (srv *service) aggregate(p domain.PacketEnvelope) {
 	for k, v := range srv.graph.Edges {
 		v.Weight = float32(v.PacketCount) / float32(srv.graph.Properties.PacketCount)
 		srv.graph.Edges[k] = v
+	}
+}
+
+func (srv *service) emptyGraph() {
+	srv.graph = domain.TrafficGraph{
+		Vertices: make(map[string]domain.VertexProperties),
+		Edges:    make(map[string]domain.EdgeProperties),
+		Properties: domain.TrafficGraphProperties{
+			PacketCount: 0,
+		},
 	}
 }

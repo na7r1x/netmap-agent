@@ -1,12 +1,19 @@
 package main
 
 import (
+	"github.com/na7r1x/netmap-agent/internal/services/dispatchersrv"
 	"errors"
 	"fmt"
 	"log"
 	"net"
 	"strings"
 	"time"
+	"flag"
+	"context"
+	"sync"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -16,7 +23,7 @@ import (
 )
 
 var (
-	device       string
+	netInterface       string
 	snapshot_len int32 = 10240
 	promiscuous  bool  = false
 	err          error
@@ -34,32 +41,31 @@ var (
 	srcPort    int
 	dstPort    int
 	packetType string
+
+	// bastion config
+	bastionUrl string
 )
 
-// func init() {
-// 	flag.StringVar(&device, "netInterface", "eth0", "A network interface to monitor.")
-// 	fmt.Println("selected device " + device)
-// 	ifaces, err := net.Interfaces()
-//     if err != nil {
-//         fmt.Print(fmt.Errorf("localAddresses: %+v\n", err.Error()))
-//         return
-//     }
-// 	fmt.Println(ifaces)
-// }
+func init() {
+	flag.StringVar(&netInterface, "interface", "", "A network interface to monitor.")	
+	flag.StringVar(&bastionUrl, "bastion", "", "A bastion address, to which metrics will be pushed.")
+
+	flag.Parse()
+
+	if (netInterface == "") {
+		fmt.Println("No device selected; will listen on all interfaces")
+	} else {
+		fmt.Println("Selected device: " + netInterface)
+	}
+
+	if (bastionUrl == "") {
+		fmt.Println("Bastion url is required.")
+	} else {
+		fmt.Println("Will publish metrics to:  " + bastionUrl)
+	}
+}
 
 func main() {
-	// Get a list of all interfaces.
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		panic(err)
-	}
-
-	// Get a list of all devices
-	devices, err := pcap.FindAllDevs()
-	if err != nil {
-		panic(err)
-	}
-
 	// channel used to signal termination
 	stop := make(chan struct{})
 	defer close(stop)
@@ -68,35 +74,90 @@ func main() {
 	aggrIn := make(chan domain.PacketEnvelope)     // to aggregator
 	dispatcherIn := make(chan domain.TrafficGraph) // from aggregator to dispatcher (sink)
 
-	// initialise aggregator in a separate goroutine
-	aggr := aggregatorsrv.New(aggrIn, dispatcherIn, stop)
-	go aggr.Listen()
+	// Set up cancellation context and waitgroup
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	wg := &sync.WaitGroup{}
 
-	// var wg sync.WaitGroup
+	// initialise aggregator in a separate goroutine
+	aggr := aggregatorsrv.New(aggrIn, dispatcherIn, ctx)
+	wg.Add(1)
+	go aggr.Listen(wg)
+	
+	// initialise dispatcher in a separate goroutine
+	dispatcher := dispatchersrv.New("http://localhost", bastionUrl, dispatcherIn, ctx)
+	dispatcher.Connect()
+	wg.Add(1)
+	go dispatcher.Listen(wg)
+
+
+	// Get a list of all interfaces.
+	var ifaces []net.Interface
+	if (netInterface != "") {
+		thisInterface, err := net.InterfaceByName(netInterface)
+		if (err != nil) {
+			fmt.Println("Failed fetching interface: " + err.Error())
+			panic(err)
+		}
+		ifaces = append(ifaces, *thisInterface)
+	} else {
+		ifaces, err = net.Interfaces()
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	// Get a list of all devices if not specified
+	devices, err := pcap.FindAllDevs()
+	if err != nil {
+		panic(err)
+	}
+
 	for _, iface := range ifaces {
-		// wg.Add(1)
 		// Start up a scan on each interface.
+		wg.Add(1)
 		go func(iface net.Interface) {
-			// defer wg.Done()
+			defer wg.Done()
 			thisDevice, err := resolveDevice(&iface, &devices)
 			if err != nil {
 				log.Printf("interface %v: %v", iface.Name, err)
 			} else {
 				fmt.Println("Start monitoring packets on device: " + thisDevice)
-				monitorPackets(thisDevice, stop, aggrIn)
+				monitorPackets(thisDevice, ctx, aggrIn)
 			}
 		}(iface)
 	}
 
-	// and wait..
-	// wg.Wait()
+	// start periodic flushing
+	wg.Add(1)
+	go func(ctx context.Context, wg *sync.WaitGroup) {
+		defer wg.Done()
+		select{
+		case <- ctx.Done():
+			fmt.Println("Flushing routine received termination signal - shutting down.")
+			return
+		default:
+			time.Sleep(10 * time.Second)
+			aggr.Flush()
+		}
+	}(ctx,wg)
 
-	// flush periodically
-	for {
-		time.Sleep(10 * time.Second)
-		aggr.Flush()
-	}
+	// Handle sigterm and await termChan signal
+	termChan := make(chan os.Signal)
+	signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
+	
+	<-termChan         // Blocks here until interrupted
+
+	// Handle shutdown
+	fmt.Println("*********************************\nShutdown signal received\n*********************************")
+	cancelFunc()       // Signal cancellation to context.Context
+	wg.Wait()          // Block here until are workers are done
+	
+	fmt.Println("All workers done, shutting down!")
+	
 }
+
+
+
 
 func resolveDevice(iface *net.Interface, devices *[]pcap.Interface) (string, error) {
 	// We just look for IPv4 addresses, so try to find if the interface has one.
@@ -141,7 +202,7 @@ func resolveDevice(iface *net.Interface, devices *[]pcap.Interface) (string, err
 	}
 }
 
-func monitorPackets(thisDevice string, stop chan struct{}, aggrIn chan domain.PacketEnvelope) {
+func monitorPackets(thisDevice string, ctx context.Context, aggrIn chan domain.PacketEnvelope) {
 	// Open device
 	handle, err = pcap.OpenLive(thisDevice, snapshot_len, promiscuous, timeout)
 	if err != nil {
@@ -155,7 +216,7 @@ func monitorPackets(thisDevice string, stop chan struct{}, aggrIn chan domain.Pa
 	for {
 		var packet gopacket.Packet
 		select {
-		case <-stop:
+		case <-ctx.Done():
 			fmt.Printf("stopping packet monitoring for: %s", thisDevice)
 			return
 		case packet = <-in:
@@ -171,7 +232,7 @@ func monitorPackets(thisDevice string, stop chan struct{}, aggrIn chan domain.Pa
 
 			err := parser.DecodeLayers(packet.Data(), &foundLayerTypes)
 			if err != nil {
-				fmt.Println("Trouble decoding layers: ", err)
+				// fmt.Println("Trouble decoding layers: ", err)
 			}
 
 			for _, layerType := range foundLayerTypes {
@@ -199,7 +260,7 @@ func monitorPackets(thisDevice string, stop chan struct{}, aggrIn chan domain.Pa
 				}
 			}
 
-			fmt.Printf("[%s] %s:%d --> %s:%d\n", packetType, srcIp, srcPort, dstIp, dstPort)
+			// fmt.Printf("[%s] %s:%d --> %s:%d\n", packetType, srcIp, srcPort, dstIp, dstPort)
 			toAggregate := domain.PacketEnvelope{
 				Type:    packetType,
 				SrcAddr: srcIp,
