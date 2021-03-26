@@ -1,31 +1,31 @@
 package dispatchersrv
 
 import (
-	"github.com/na7r1x/netmap-agent/internal/domain"
-	"log"
-	"fmt"
-	"encoding/json"
-	"sync"
 	"context"
-		
-	"golang.org/x/net/websocket"
+	"encoding/json"
+	"fmt"
+	"log"
+	"sync"
 
+	"github.com/na7r1x/netmap-agent/internal/domain"
+
+	"golang.org/x/net/websocket"
 )
 
 type service struct {
 	origin string
-	url string
-	conn *websocket.Conn
-	in chan domain.TrafficGraph
-	ctx context.Context
+	url    string
+	conn   *websocket.Conn
+	in     chan domain.TrafficGraph
+	ctx    context.Context
 }
 
 func New(origin string, url string, in chan domain.TrafficGraph, ctx context.Context) *service {
 	return &service{
 		origin: origin,
-		url: url,
-		in: in,
-		ctx: ctx,
+		url:    url,
+		in:     in,
+		ctx:    ctx,
 	}
 }
 
@@ -68,14 +68,13 @@ func (srv *service) dispatch(payload interface{}) error {
 		log.Fatal(err)
 		return err
 	}
-	var msg = make([]byte, 10240)
-	var n int
-	if n, err = srv.conn.Read(msg); err != nil {
-		log.Fatal(err)
-		return err
+	// var msg = make([]byte, 10240)
+	// var n int
+	// if n, err = srv.conn.Read(msg); err != nil {
+	// 	log.Fatal(err)
+	// 	return err
 
-	}
-	fmt.Printf("Server responded with: %s.\n", msg[:n])
+	// }
+	// fmt.Printf("Server responded with: %s.\n", msg[:n])
 	return nil
 }
-
