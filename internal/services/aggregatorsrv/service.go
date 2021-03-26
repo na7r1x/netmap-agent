@@ -44,6 +44,9 @@ func (srv *service) Listen(wg *sync.WaitGroup) {
 			srv.aggregate(packet)
 		case <-srv.flush:
 			fmt.Println("Flushing graph...")
+			if (srv.graph.Properties.PacketCount == 0) {
+				fmt.Println("Nothing to flush.")
+			}
 			srv.out <- srv.graph
 			srv.emptyGraph()
 		}

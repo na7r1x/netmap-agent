@@ -67,8 +67,8 @@ func init() {
 
 func main() {
 	// channel used to signal termination
-	stop := make(chan struct{})
-	defer close(stop)
+	// stop := make(chan struct{})
+	// defer close(stop)
 
 	// pipeline channels
 	aggrIn := make(chan domain.PacketEnvelope)     // to aggregator
@@ -129,17 +129,20 @@ func main() {
 
 	// start periodic flushing
 	wg.Add(1)
-	go func(ctx context.Context, wg *sync.WaitGroup) {
+	go func(flushCtx context.Context) {
 		defer wg.Done()
-		select{
-		case <- ctx.Done():
-			fmt.Println("Flushing routine received termination signal - shutting down.")
-			return
-		default:
-			time.Sleep(10 * time.Second)
+		for {
+			
 			aggr.Flush()
+			
+			select{
+			case <- flushCtx.Done():
+				fmt.Println("[flusher]: Flushing routine received termination signal - shutting down.")
+				return
+			case <-	time.After(5 * time.Second):
+			}
 		}
-	}(ctx,wg)
+	}(ctx)
 
 	// Handle sigterm and await termChan signal
 	termChan := make(chan os.Signal)
@@ -217,7 +220,7 @@ func monitorPackets(thisDevice string, ctx context.Context, aggrIn chan domain.P
 		var packet gopacket.Packet
 		select {
 		case <-ctx.Done():
-			fmt.Printf("stopping packet monitoring for: %s", thisDevice)
+			fmt.Printf("[packet monitor]: stopping packet monitoring for: %s\n", thisDevice)
 			return
 		case packet = <-in:
 			parser := gopacket.NewDecodingLayerParser(

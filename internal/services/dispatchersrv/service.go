@@ -75,7 +75,7 @@ func (srv *service) dispatch(payload interface{}) error {
 		return err
 
 	}
-	fmt.Printf("Server respnded with: %s.\n", msg[:n])
+	fmt.Printf("Server responded with: %s.\n", msg[:n])
 	return nil
 }
 
