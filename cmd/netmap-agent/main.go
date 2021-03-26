@@ -6,7 +6,6 @@ import (
 	"log"
 	"net"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/gopacket"
@@ -73,12 +72,12 @@ func main() {
 	aggr := aggregatorsrv.New(aggrIn, dispatcherIn, stop)
 	go aggr.Listen()
 
-	var wg sync.WaitGroup
+	// var wg sync.WaitGroup
 	for _, iface := range ifaces {
-		wg.Add(1)
+		// wg.Add(1)
 		// Start up a scan on each interface.
 		go func(iface net.Interface) {
-			defer wg.Done()
+			// defer wg.Done()
 			thisDevice, err := resolveDevice(&iface, &devices)
 			if err != nil {
 				log.Printf("interface %v: %v", iface.Name, err)
@@ -88,7 +87,15 @@ func main() {
 			}
 		}(iface)
 	}
-	wg.Wait()
+
+	// and wait..
+	// wg.Wait()
+
+	// flush periodically
+	for {
+		time.Sleep(10 * time.Second)
+		aggr.Flush()
+	}
 }
 
 func resolveDevice(iface *net.Interface, devices *[]pcap.Interface) (string, error) {
@@ -149,7 +156,7 @@ func monitorPackets(thisDevice string, stop chan struct{}, aggrIn chan domain.Pa
 		var packet gopacket.Packet
 		select {
 		case <-stop:
-			fmt.Printf("stoppinn packet monitoring for: %s", thisDevice)
+			fmt.Printf("stopping packet monitoring for: %s", thisDevice)
 			return
 		case packet = <-in:
 			parser := gopacket.NewDecodingLayerParser(
