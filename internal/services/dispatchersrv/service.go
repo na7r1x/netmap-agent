@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 
 	"github.com/na7r1x/netmap-agent/internal/domain"
@@ -16,11 +17,11 @@ type service struct {
 	origin string
 	url    string
 	conn   *websocket.Conn
-	in     chan domain.TrafficGraph
+	in     chan domain.TrafficGraphInternal
 	ctx    context.Context
 }
 
-func New(origin string, url string, in chan domain.TrafficGraph, ctx context.Context) *service {
+func New(origin string, url string, in chan domain.TrafficGraphInternal, ctx context.Context) *service {
 	return &service{
 		origin: origin,
 		url:    url,
@@ -46,18 +47,49 @@ func (srv *service) Disconnect() {
 func (srv *service) Listen(wg *sync.WaitGroup) {
 	defer wg.Done()
 	for {
-		var graph domain.TrafficGraph
+		var graph domain.TrafficGraphInternal
 		select {
 		case <-srv.ctx.Done():
 			fmt.Println("[dispatchersrv]: received termination signal")
 			return
 		case graph = <-srv.in:
-			srv.dispatch(graph)
+			srv.dispatch(srv.prepareForDispatch(graph))
 		}
 	}
 }
 
+func (srv *service) prepareForDispatch(in domain.TrafficGraphInternal) domain.TrafficGraph {
+	// remap to consumer graph
+	var _vertices []domain.Vertex
+	var _edges []domain.Edge
+	_packetCount := in.Properties.PacketCount
+
+	for id, thisVertex := range in.Vertices {
+		_vertices = append(_vertices, domain.Vertex{
+			Id:   id,
+			Type: thisVertex.Type,
+		})
+	}
+
+	for id, thisEdge := range in.Edges {
+		_edges = append(_edges, domain.Edge{
+			Source:      strings.Split(id, "-")[0],
+			Destination: strings.Split(id, "-")[1],
+			Properties:  thisEdge,
+		})
+	}
+
+	graph := domain.TrafficGraph{
+		Vertices:    _vertices,
+		Edges:       _edges,
+		PacketCount: _packetCount,
+		Reporter:    "test",
+	}
+	return graph
+}
+
 func (srv *service) dispatch(payload interface{}) error {
+	fmt.Println(payload)
 	jsonBytes, err := json.Marshal(payload)
 	if err != nil {
 		fmt.Println(err)

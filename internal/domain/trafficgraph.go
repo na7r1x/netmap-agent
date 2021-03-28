@@ -1,9 +1,16 @@
 package domain
 
-type TrafficGraph struct {
+type TrafficGraphInternal struct {
 	Vertices   map[string]VertexProperties `json:"vertices"`
 	Edges      map[string]EdgeProperties   `json:"edges"`
 	Properties TrafficGraphProperties      `json:"properties"`
+}
+
+type TrafficGraph struct {
+	Vertices    []Vertex `json:"vertices"`
+	Edges       []Edge   `json:"edges"`
+	PacketCount int      `json:"packetCount"`
+	Reporter    string   `json:"reporter"`
 }
 
 type TrafficGraphProperties struct {
@@ -11,7 +18,8 @@ type TrafficGraphProperties struct {
 }
 
 type Vertex struct {
-	Id string `json:"id"`
+	Id   string `json:"id"`
+	Type string `json:"type"`
 }
 
 type VertexProperties struct {
@@ -19,8 +27,9 @@ type VertexProperties struct {
 }
 
 type Edge struct {
-	Source      Vertex `json:"source"`
-	Destination Vertex `json:"destination"`
+	Source      string         `json:"source"`
+	Destination string         `json:"destination"`
+	Properties  EdgeProperties `json:"properties"`
 }
 
 type EdgeProperties struct {
@@ -29,6 +38,6 @@ type EdgeProperties struct {
 	TrafficType string `json:"trafficType"`
 	PacketCount int    `json:"packetCount"`
 	// direction
-	SourcePort      int `json:"sourcePort`
+	SourcePort      int `json:"sourcePort"`
 	DestinationPort int `json:"destinationPort"`
 }
