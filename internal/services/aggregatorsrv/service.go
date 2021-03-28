@@ -1,9 +1,9 @@
 package aggregatorsrv
 
 import (
+	"context"
 	"fmt"
 	"sync"
-	"context"
 
 	"github.com/na7r1x/netmap-agent/internal/domain"
 )
@@ -11,15 +11,15 @@ import (
 type service struct {
 	in    chan domain.PacketEnvelope
 	out   chan domain.TrafficGraph
-	ctx  context.Context
+	ctx   context.Context
 	flush chan bool
 	graph domain.TrafficGraph
 }
 
 func New(in chan domain.PacketEnvelope, out chan domain.TrafficGraph, ctx context.Context) *service {
 	return &service{
-		in:   in,
-		out:  out,
+		in:  in,
+		out: out,
 		ctx: ctx,
 		graph: domain.TrafficGraph{
 			Vertices: make(map[string]domain.VertexProperties),
@@ -44,7 +44,7 @@ func (srv *service) Listen(wg *sync.WaitGroup) {
 			srv.aggregate(packet)
 		case <-srv.flush:
 			fmt.Println("Flushing graph...")
-			if (srv.graph.Properties.PacketCount == 0) {
+			if srv.graph.Properties.PacketCount == 0 {
 				fmt.Println("Nothing to flush.")
 			}
 			srv.out <- srv.graph

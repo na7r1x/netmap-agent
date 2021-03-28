@@ -1,19 +1,20 @@
 package main
 
 import (
-	"github.com/na7r1x/netmap-agent/internal/services/dispatchersrv"
+	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"net"
-	"strings"
-	"time"
-	"flag"
-	"context"
-	"sync"
 	"os"
 	"os/signal"
+	"strings"
+	"sync"
 	"syscall"
+	"time"
+
+	"github.com/na7r1x/netmap-agent/internal/services/dispatchersrv"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -23,7 +24,7 @@ import (
 )
 
 var (
-	netInterface       string
+	netInterface string
 	snapshot_len int32 = 10240
 	promiscuous  bool  = false
 	err          error
@@ -47,18 +48,18 @@ var (
 )
 
 func init() {
-	flag.StringVar(&netInterface, "interface", "", "A network interface to monitor.")	
+	flag.StringVar(&netInterface, "interface", "", "A network interface to monitor.")
 	flag.StringVar(&bastionUrl, "bastion", "", "A bastion address, to which metrics will be pushed.")
 
 	flag.Parse()
 
-	if (netInterface == "") {
+	if netInterface == "" {
 		fmt.Println("No device selected; will listen on all interfaces")
 	} else {
 		fmt.Println("Selected device: " + netInterface)
 	}
 
-	if (bastionUrl == "") {
+	if bastionUrl == "" {
 		fmt.Println("Bastion url is required.")
 	} else {
 		fmt.Println("Will publish metrics to:  " + bastionUrl)
@@ -82,19 +83,18 @@ func main() {
 	aggr := aggregatorsrv.New(aggrIn, dispatcherIn, ctx)
 	wg.Add(1)
 	go aggr.Listen(wg)
-	
+
 	// initialise dispatcher in a separate goroutine
 	dispatcher := dispatchersrv.New("http://localhost", bastionUrl, dispatcherIn, ctx)
 	dispatcher.Connect()
 	wg.Add(1)
 	go dispatcher.Listen(wg)
 
-
 	// Get a list of all interfaces.
 	var ifaces []net.Interface
-	if (netInterface != "") {
+	if netInterface != "" {
 		thisInterface, err := net.InterfaceByName(netInterface)
-		if (err != nil) {
+		if err != nil {
 			fmt.Println("Failed fetching interface: " + err.Error())
 			panic(err)
 		}
@@ -132,14 +132,14 @@ func main() {
 	go func(flushCtx context.Context) {
 		defer wg.Done()
 		for {
-			
+
 			aggr.Flush()
-			
-			select{
-			case <- flushCtx.Done():
+
+			select {
+			case <-flushCtx.Done():
 				fmt.Println("[flusher]: Flushing routine received termination signal - shutting down.")
 				return
-			case <-	time.After(5 * time.Second):
+			case <-time.After(5 * time.Second):
 			}
 		}
 	}(ctx)
@@ -147,20 +147,17 @@ func main() {
 	// Handle sigterm and await termChan signal
 	termChan := make(chan os.Signal)
 	signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
-	
-	<-termChan         // Blocks here until interrupted
+
+	<-termChan // Blocks here until interrupted
 
 	// Handle shutdown
 	fmt.Println("*********************************\nShutdown signal received\n*********************************")
-	cancelFunc()       // Signal cancellation to context.Context
-	wg.Wait()          // Block here until are workers are done
-	
+	cancelFunc() // Signal cancellation to context.Context
+	wg.Wait()    // Block here until are workers are done
+
 	fmt.Println("All workers done, shutting down!")
-	
+
 }
-
-
-
 
 func resolveDevice(iface *net.Interface, devices *[]pcap.Interface) (string, error) {
 	// We just look for IPv4 addresses, so try to find if the interface has one.

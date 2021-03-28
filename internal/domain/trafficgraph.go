@@ -2,8 +2,8 @@ package domain
 
 type TrafficGraph struct {
 	Vertices   map[string]VertexProperties `json:"vertices"`
-	Edges      map[string]EdgeProperties `json:"edges"`
-	Properties TrafficGraphProperties `json:"properties"`
+	Edges      map[string]EdgeProperties   `json:"edges"`
+	Properties TrafficGraphProperties      `json:"properties"`
 }
 
 type TrafficGraphProperties struct {
