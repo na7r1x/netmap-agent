@@ -10,18 +10,18 @@ import (
 
 type service struct {
 	in    chan domain.PacketEnvelope
-	out   chan domain.TrafficGraph
+	out   chan domain.TrafficGraphInternal
 	ctx   context.Context
 	flush chan bool
-	graph domain.TrafficGraph
+	graph domain.TrafficGraphInternal
 }
 
-func New(in chan domain.PacketEnvelope, out chan domain.TrafficGraph, ctx context.Context) *service {
+func New(in chan domain.PacketEnvelope, out chan domain.TrafficGraphInternal, ctx context.Context) *service {
 	return &service{
 		in:  in,
 		out: out,
 		ctx: ctx,
-		graph: domain.TrafficGraph{
+		graph: domain.TrafficGraphInternal{
 			Vertices: make(map[string]domain.VertexProperties),
 			Edges:    make(map[string]domain.EdgeProperties),
 			Properties: domain.TrafficGraphProperties{
@@ -112,7 +112,7 @@ func (srv *service) aggregate(p domain.PacketEnvelope) {
 }
 
 func (srv *service) emptyGraph() {
-	srv.graph = domain.TrafficGraph{
+	srv.graph = domain.TrafficGraphInternal{
 		Vertices: make(map[string]domain.VertexProperties),
 		Edges:    make(map[string]domain.EdgeProperties),
 		Properties: domain.TrafficGraphProperties{

@@ -72,8 +72,8 @@ func main() {
 	// defer close(stop)
 
 	// pipeline channels
-	aggrIn := make(chan domain.PacketEnvelope)     // to aggregator
-	dispatcherIn := make(chan domain.TrafficGraph) // from aggregator to dispatcher (sink)
+	aggrIn := make(chan domain.PacketEnvelope)             // to aggregator
+	dispatcherIn := make(chan domain.TrafficGraphInternal) // from aggregator to dispatcher (sink)
 
 	// Set up cancellation context and waitgroup
 	ctx, cancelFunc := context.WithCancel(context.Background())

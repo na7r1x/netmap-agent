@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 
 	"github.com/na7r1x/netmap-agent/internal/domain"
@@ -16,11 +17,11 @@ type service struct {
 	origin string
 	url    string
 	conn   *websocket.Conn
-	in     chan domain.TrafficGraph
+	in     chan domain.TrafficGraphInternal
 	ctx    context.Context
 }
 
-func New(origin string, url string, in chan domain.TrafficGraph, ctx context.Context) *service {
+func New(origin string, url string, in chan domain.TrafficGraphInternal, ctx context.Context) *service {
 	return &service{
 		origin: origin,
 		url:    url,
@@ -46,18 +47,19 @@ func (srv *service) Disconnect() {
 func (srv *service) Listen(wg *sync.WaitGroup) {
 	defer wg.Done()
 	for {
-		var graph domain.TrafficGraph
+		var graph domain.TrafficGraphInternal
 		select {
 		case <-srv.ctx.Done():
 			fmt.Println("[dispatchersrv]: received termination signal")
 			return
 		case graph = <-srv.in:
-			srv.dispatch(graph)
+			srv.dispatch(srv.prepareForDispatch(graph))
 		}
 	}
 }
 
 func (srv *service) dispatch(payload interface{}) error {
+	// fmt.Println(payload)
 	jsonBytes, err := json.Marshal(payload)
 	if err != nil {
 		fmt.Println(err)
@@ -77,4 +79,34 @@ func (srv *service) dispatch(payload interface{}) error {
 	// }
 	// fmt.Printf("Server responded with: %s.\n", msg[:n])
 	return nil
+}
+
+func (srv *service) prepareForDispatch(payload domain.TrafficGraphInternal) domain.TrafficGraph {
+	var _vertices []domain.Vertex
+	var _edges []domain.Edge
+
+	for k, v := range payload.Vertices {
+		thisVertex := domain.Vertex{
+			Id:   k,
+			Type: v.Type,
+		}
+		_vertices = append(_vertices, thisVertex)
+	}
+
+	for k, v := range payload.Edges {
+		thisEdge := domain.Edge{
+			Source:      strings.Split(k, "-")[0],
+			Destination: strings.Split(k, "-")[1],
+			Properties:  v,
+		}
+		_edges = append(_edges, thisEdge)
+	}
+
+	return domain.TrafficGraph{
+		Vertices:    _vertices,
+		Edges:       _edges,
+		PacketCount: payload.Properties.PacketCount,
+		Reporter:    "placeholder",
+	}
+
 }
