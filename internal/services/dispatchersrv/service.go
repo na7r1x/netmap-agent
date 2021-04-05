@@ -89,7 +89,7 @@ func (srv *service) prepareForDispatch(in domain.TrafficGraphInternal) domain.Tr
 }
 
 func (srv *service) dispatch(payload interface{}) error {
-	fmt.Println(payload)
+	// fmt.Println(payload)
 	jsonBytes, err := json.Marshal(payload)
 	if err != nil {
 		fmt.Println(err)
@@ -109,4 +109,34 @@ func (srv *service) dispatch(payload interface{}) error {
 	// }
 	// fmt.Printf("Server responded with: %s.\n", msg[:n])
 	return nil
+}
+
+func (srv *service) prepareForDispatch(payload domain.TrafficGraphInternal) domain.TrafficGraph {
+	var _vertices []domain.Vertex
+	var _edges []domain.Edge
+
+	for k, v := range payload.Vertices {
+		thisVertex := domain.Vertex{
+			Id:   k,
+			Type: v.Type,
+		}
+		_vertices = append(_vertices, thisVertex)
+	}
+
+	for k, v := range payload.Edges {
+		thisEdge := domain.Edge{
+			Source:      strings.Split(k, "-")[0],
+			Destination: strings.Split(k, "-")[1],
+			Properties:  v,
+		}
+		_edges = append(_edges, thisEdge)
+	}
+
+	return domain.TrafficGraph{
+		Vertices:    _vertices,
+		Edges:       _edges,
+		PacketCount: payload.Properties.PacketCount,
+		Reporter:    "placeholder",
+	}
+
 }
